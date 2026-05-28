@@ -19,9 +19,11 @@ import 'package:flutter_tools/src/build_system/targets/android.dart';
 import 'package:flutter_tools/src/build_system/targets/assets.dart';
 import 'package:flutter_tools/src/build_system/targets/common.dart';
 import 'package:flutter_tools/src/build_system/targets/icon_tree_shaker.dart';
+import 'package:flutter_tools/src/build_system/targets/native_assets.dart';
 import 'package:flutter_tools/src/cache.dart';
 import 'package:flutter_tools/src/cmake.dart';
 import 'package:flutter_tools/src/globals.dart' as globals;
+import 'package:flutter_tools/src/isolated/native_assets/dart_hook_result.dart';
 import 'package:flutter_tools/src/project.dart';
 
 import 'elinux_builder.dart';
@@ -84,9 +86,11 @@ abstract class ELinuxAssetBundle extends Target {
     }
     final TargetPlatform tp =
         buildInfo.targetArch == 'arm64' ? TargetPlatform.linux_arm64 : TargetPlatform.linux_x64;
+    final DartHooksResult dartHookResult = await DartBuild.loadHookResult(environment);
     final Depfile assetDepfile = await copyAssets(
       environment,
       outputDirectory,
+      dartHookResult: dartHookResult,
       targetPlatform: tp,
       buildMode: buildMode,
       flavor: environment.defines[kFlavor],
@@ -361,12 +365,7 @@ class NativeBundle {
         eLinuxDir.path,
       ],
       workingDirectory: outputDir.path,
-      environment: (targetToolchain == null)
-          ? <String, String>{'CC': 'clang', 'CXX': 'clang++'}
-          : <String, String>{
-              'CC': '$targetToolchain/bin/clang',
-              'CXX': '$targetToolchain/bin/clang++'
-            },
+      environment: _buildCMakeEnvironment(targetToolchain),
     );
     if (result.exitCode != 0) {
       throwToolExit('Failed to cmake:\n$result');
@@ -406,6 +405,17 @@ class NativeBundle {
       );
     }
   }
+}
+
+Map<String, String> _buildCMakeEnvironment(String? targetToolchain) {
+  final String? ccEnv = Platform.environment['CC'];
+  final String? cxxEnv = Platform.environment['CXX'];
+
+  final String cc = ccEnv ?? (targetToolchain != null ? '$targetToolchain/bin/clang' : 'clang');
+  final String cxx =
+      cxxEnv ?? (targetToolchain != null ? '$targetToolchain/bin/clang++' : 'clang++');
+
+  return <String, String>{'CC': cc, 'CXX': cxx};
 }
 
 String _getCurrentHostPlatformArchName() {
